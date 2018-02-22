@@ -1,0 +1,73 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: WEB - Base, Hosted Zone, SNS Topics and Subscriptions
+
+Parameters:
+
+  Environment: 
+    Type: String
+
+  CreateNotificationSubscriptions:
+    Type: String
+    Default: "false"
+
+  SNSEmailAddress:
+    Type: String
+
+  HostedZoneName:
+    Type: String
+
+  RootHostedZoneID:
+    Type: String
+
+Conditions: 
+  CreateNotificationSubscriptionsCond: !Equals [ !Ref CreateNotificationSubscriptions, "true" ]
+
+Resources:
+
+  HealthAlertsSnsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub ${Environment}-web-infhealthalerts
+      TopicName: !Sub ${Environment}-web-infhealthalerts
+
+  HealthAlertsSnsSubcription:
+    Type: AWS::SNS::Subscription
+    Condition: CreateNotificationSubscriptionsCond
+    Properties:
+      Endpoint: !Sub ${SNSEmailAddress}
+      Protocol: email
+      TopicArn: !Ref HealthAlertsSnsTopic
+
+  WebHostedZone:
+    Type: 'AWS::Route53::HostedZone'
+    Properties:
+      HostedZoneConfig:
+        Comment: !Sub "Hosted zone for ${Environment} environment"
+      Name: !Sub ${HostedZoneName}
+
+  MainRootHostedZoneRecordSet:
+    Type: 'AWS::Route53::RecordSet'
+    Properties:
+      HostedZoneId: !Sub ${RootHostedZoneID}
+      Name: !Sub ${HostedZoneName}
+      Type: NS
+      TTL: '900'
+      ResourceRecords: !GetAtt WebHostedZone.NameServers
+    DependsOn:
+      WebHostedZone
+
+Outputs:
+  
+  InfHealthAlertsSnsTopic:
+    Description: The SNS Topic to be used for Health Alerts
+    Value: !Ref HealthAlertsSnsTopic
+    Export: 
+      Name: !Sub ${AWS::StackName}-WebHealthAlertsSnsTopic
+
+  WebHostedZone:
+    Description: The Hosted Zone ID to add records to
+    Value : !Ref WebHostedZone
+    Export: 
+      Name: !Sub ${AWS::StackName}-WebHostedZone

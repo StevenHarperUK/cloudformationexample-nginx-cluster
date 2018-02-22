@@ -1,0 +1,22 @@
+[
+    {
+        "ParameterKey": "Environment",
+        "ParameterValue": "test"
+    },
+    {
+        "ParameterKey": "NetworkStack",
+        "ParameterValue": "test-web-network"
+    },
+    {
+        "ParameterKey": "LoadBalancerStack",
+        "ParameterValue": "test-web-loadbalancer"
+    },
+    {
+        "ParameterKey": "BaseStack",
+        "ParameterValue": "test-web-base"
+    },
+    {
+        "ParameterKey": "KeyName",
+        "ParameterValue": "cloudformationexample_nignx_test_rsa"
+    }
+]

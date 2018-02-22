@@ -1,0 +1,342 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: WEB - Network
+
+Parameters:
+
+  Environment:
+    Type: String
+
+  VpcCIDR:
+    Type: String
+
+  PublicACIDR:
+    Type: String
+
+  PublicBCIDR:
+    Type: String
+
+  AppACIDR:
+    Type: String
+
+  AppBCIDR:
+    Type: String
+
+  NatGatewayACIDR:
+    Type: String
+
+  NatGatewayBCIDR:
+    Type: String
+
+Resources:
+
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Sub ${VpcCIDR}
+      EnableDnsHostnames: 'true'
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-web
+  
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-web
+  
+  GatewayToInternet:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  ##
+  # NAT Gateway
+  ##
+
+  NatGatewaySubnetAElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGatewaySubnetBElasticIp:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+
+  NatGatewayA:
+    DependsOn: InternetGateway
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewaySubnetAElasticIp.AllocationId
+      SubnetId: !Ref NatGatewaySubnetA
+
+  NatGatewayB:
+    DependsOn: InternetGateway
+    Type: AWS::EC2::NatGateway
+    Properties:
+      AllocationId: !GetAtt NatGatewaySubnetBElasticIp.AllocationId
+      SubnetId: !Ref NatGatewaySubnetB
+
+  NatGatewaySubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Sub ${NatGatewayACIDR}
+      AvailabilityZone: !Sub ${AWS::Region}a
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-web-natgateway-a
+
+  NatGatewaySubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Sub ${NatGatewayBCIDR}
+      AvailabilityZone: !Sub ${AWS::Region}b
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-web-natgateway-b
+
+  NatGatewayRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-web-natgateway
+
+  NatGatewaySubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref NatGatewaySubnetA
+      RouteTableId: !Ref NatGatewayRouteTable
+
+  NatGatewaySubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref NatGatewaySubnetB
+      RouteTableId: !Ref NatGatewayRouteTable
+
+  NatGatewayRouteToInternet:
+    Type: AWS::EC2::Route
+    DependsOn: GatewayToInternet
+    Properties:
+      RouteTableId: !Ref NatGatewayRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  ###
+  # Public
+  ###
+
+  PublicSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Sub ${PublicACIDR}
+      AvailabilityZone: !Sub ${AWS::Region}a
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-public-a
+
+  PublicSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Sub ${PublicBCIDR}
+      AvailabilityZone: !Sub ${AWS::Region}b
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-public-b
+
+  PublicSubnetARouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags: 
+        - Key: Name
+          Value: !Sub ${Environment}-web-public-a
+
+  PublicSubnetBRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags: 
+        - Key: Name
+          Value: !Sub ${Environment}-web-public-b
+
+  PublicSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetA
+      RouteTableId: !Ref PublicSubnetARouteTable
+
+  PublicSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnetB
+      RouteTableId: !Ref PublicSubnetBRouteTable
+
+  PublicSubnetARouteToGateway:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicSubnetARouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetBRouteToGateway:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PublicSubnetBRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  ###
+  # App
+  ###
+
+  AppSubnetA:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Sub ${AppACIDR}
+      AvailabilityZone: !Sub ${AWS::Region}a
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-web-app-a
+
+  AppSubnetB:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      CidrBlock: !Sub ${AppBCIDR}
+      AvailabilityZone: !Sub ${AWS::Region}b
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-web-app-b
+
+  AppSubnetARouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-web-app-a
+
+  AppSubnetBRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+      - Key: Name
+        Value: !Sub ${Environment}-web-app-b
+
+  AppSubnetARouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnetA
+      RouteTableId: !Ref AppSubnetARouteTable
+
+  AppSubnetBRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref AppSubnetB
+      RouteTableId: !Ref AppSubnetBRouteTable
+
+  AppSubnetARouteToNatGateway:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref AppSubnetARouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayA
+
+  AppSubnetBRouteToNatGateway:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref AppSubnetBRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NatGatewayB
+
+Outputs:
+
+  Vpc:
+    Description: Web - VPC
+    Value: !Ref VPC
+    Export: 
+      Name: !Sub ${AWS::StackName}-VpcId
+
+  InternetGateway:
+    Description: Web - Internet Gateway
+    Value: !Ref InternetGateway
+    Export:
+      Name: !Sub ${AWS::StackName}-InternetGateway
+
+  PublicSubnetA:
+    Description: Web - Subnet - Public A
+    Value: !Ref PublicSubnetA
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicSubnetAId
+
+  PublicSubnetB:
+    Description: Web - Subnet - Public B
+    Value: !Ref PublicSubnetB
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicSubnetBId
+
+  PublicSubnetARouteTable:
+    Description: Web - Route Table - Subnet A
+    Value: !Ref PublicSubnetARouteTable
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicSubnetARouteTable
+
+  PublicSubnetBRouteTable:
+    Description: Web - Route Table - Subnet B
+    Value: !Ref PublicSubnetBRouteTable
+    Export:
+      Name: !Sub ${AWS::StackName}-PublicSubnetBRouteTable
+
+  NatGatewayA:
+    Description: Web - Nat Gateway A - IP Address 
+    Value: !GetAtt NatGatewaySubnetAElasticIp.AllocationId
+    Export:
+      Name: !Sub ${AWS::StackName}-NatGatewayAIP
+
+  NatGatewayB:
+    Description: Web - Nat Gateway B - IP Address 
+    Value: !GetAtt NatGatewaySubnetBElasticIp.AllocationId
+    Export:
+      Name: !Sub ${AWS::StackName}-NatGatewayBIP
+
+  NatGatewayRouteTable:
+    Description: Web - Route Table - Nat Gateway
+    Value: !Ref NatGatewayRouteTable
+    Export: 
+      Name: !Sub ${AWS::StackName}-NatGatewayRouteTable
+
+  AppSubnetARouteTable:
+    Description: Web - Route Table - App A
+    Value: !Ref AppSubnetARouteTable
+    Export: 
+      Name: !Sub ${AWS::StackName}-AppSubnetARouteTable
+
+  AppSubnetBRouteTable:
+    Description: Web - Route Table - App B
+    Value: !Ref AppSubnetBRouteTable
+    Export: 
+      Name: !Sub ${AWS::StackName}-AppSubnetBRouteTable
+
+  AppSubnetA:
+    Description: Web - Subnet - App A
+    Value: !Ref AppSubnetA
+    Export: 
+      Name: !Sub ${AWS::StackName}-AppSubnetAId
+
+  AppSubnetB:
+    Description: Web - Subnet - App B
+    Value: !Ref AppSubnetB
+    Export: 
+      Name: !Sub ${AWS::StackName}-AppSubnetBId

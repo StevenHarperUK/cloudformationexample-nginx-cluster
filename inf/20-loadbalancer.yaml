@@ -1,0 +1,86 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: WEB - Load Balancer
+
+Parameters:
+
+  Environment:
+    Type: String
+
+  NetworkStack:
+    Type: String
+
+  BaseStack:
+    Type: String
+
+  HostedZoneName:
+    Type: String
+
+Resources:
+
+  LoadBalancerSecurityGroupPublicAccess:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${Environment}-web-publicalb-publicaccess
+      GroupDescription: Public ALB security group (public access)
+      VpcId:
+        Fn::ImportValue: !Sub "${NetworkStack}-VpcId"
+      SecurityGroupIngress:
+        - Description: Direct Public Traffic
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - Description: Direct Public Traffic
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+
+  WebLoadBalancer: 
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Name: !Sub ${Environment}-web-publicalb
+      Scheme: internet-facing
+      SecurityGroups : 
+        - !Ref LoadBalancerSecurityGroupPublicAccess
+      Subnets:
+        - Fn::ImportValue: !Sub "${NetworkStack}-PublicSubnetAId"
+        - Fn::ImportValue: !Sub "${NetworkStack}-PublicSubnetBId"
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-web-publicalb
+      Type: application
+
+
+  WebDnsRecord:
+    Type: AWS::Route53::RecordSet
+    DependsOn: WebLoadBalancer
+    Properties:
+      HostedZoneName: !Sub "${HostedZoneName}."
+      Name: !Sub "www.${HostedZoneName}"
+      Type: CNAME
+      TTL: 120
+      ResourceRecords:
+        - !GetAtt WebLoadBalancer.DNSName
+
+Outputs:
+
+  WebLoadBalancer:
+    Description: Web - Load Balancer
+    Value: !Ref WebLoadBalancer
+    Export:
+      Name: !Sub ${AWS::StackName}-WebLoadBalancer
+
+  WebLoadBalancerName:
+    Description: Web - Load Balancer - Full Name
+    Value: !GetAtt WebLoadBalancer.LoadBalancerFullName
+    Export:
+      Name: !Sub ${AWS::StackName}-WebLoadBalancerAlbName
+
+  WebDomain:
+    Description: Web - Load Balance DNS Name
+    Value: !Sub www.${HostedZoneName}
+    Export:
+      Name: !Sub ${AWS::StackName}-WebDnsName

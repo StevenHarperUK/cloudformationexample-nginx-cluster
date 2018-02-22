@@ -1,0 +1,18 @@
+[
+    {
+        "ParameterKey": "Environment",
+        "ParameterValue": "test"
+    },
+    {
+        "ParameterKey": "BaseStack",
+        "ParameterValue": "test-web-base"
+    },
+    {
+        "ParameterKey": "NetworkStack",
+        "ParameterValue": "test-web-network"
+    },
+    {
+        "ParameterKey": "HostedZoneName",
+        "ParameterValue": "test.cloudformationexample.co.uk"
+    }
+]

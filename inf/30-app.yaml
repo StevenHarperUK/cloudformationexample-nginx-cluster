@@ -1,0 +1,186 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+
+Description: WEB - App, Nginx Server
+
+Parameters:
+
+  Environment:
+    Type: String
+
+  NetworkStack:
+    Type: String
+
+  LoadBalancerStack:
+    Type: String
+
+  BaseStack: 
+    Type: String
+
+  KeyName:
+    Type: String
+
+Mappings:
+  WebServerAmi:
+    eu-west-1:
+      ami: ami-add175d4   # ami-add175d4 = ubuntu/images/hvm-ssd/ubuntu-xenial-16.04-amd64-server-20171026.1
+
+Resources:
+
+  IamRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: 
+                - "ec2.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        - PolicyName: "s3BucketAccess"
+          PolicyDocument: 
+            Version: "2012-10-17"
+            Statement: 
+              - Effect: Allow
+                Action: 
+                  - "s3:*"
+                Resource: 
+                  - !Sub arn:aws:s3:::made-up-s3-bucket
+                  - !Sub arn:aws:s3:::made-up-s3-bucket/*
+
+  WebServerTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      HealthCheckIntervalSeconds: 30
+      HealthyThresholdCount: 2
+      UnhealthyThresholdCount: 5
+      HealthCheckPort: 80
+      Name: !Sub ${Environment}-web-nginx-targetgroup
+      Port: 80
+      Protocol: HTTP
+      TargetGroupAttributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: 30
+      VpcId:
+        Fn::ImportValue: !Sub "${NetworkStack}-VpcId"
+
+  WebServerListenerRule:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      DefaultActions:
+      - Type: forward
+        TargetGroupArn:
+          Ref: WebServerTargetGroup
+      LoadBalancerArn:
+        Fn::ImportValue: !Sub "${LoadBalancerStack}-WebLoadBalancer"
+      Port: 80
+      Protocol: HTTP
+
+  WebServerSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${Environment}-web-nginx-server
+      GroupDescription: Web Server security group
+      VpcId: 
+        Fn::ImportValue: !Sub ${NetworkStack}-VpcId
+      SecurityGroupIngress:
+        - Description: Open to the world
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+
+  WebServerScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+        - Fn::ImportValue: !Sub ${NetworkStack}-AppSubnetAId
+        - Fn::ImportValue: !Sub ${NetworkStack}-AppSubnetBId
+      MinSize: 2
+      MaxSize: 2
+      LaunchConfigurationName: !Ref WebServerLaunchConfig
+      MetricsCollection:
+        - Granularity: 1Minute
+      TargetGroupARNs:
+        - !Ref WebServerTargetGroup
+      Tags:
+        - Key: Name
+          Value: !Sub ${Environment}-web-nginx-scalegroup
+          PropagateAtLaunch: true
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: true
+
+  WebServerGroupAlarmLowCpuCreditBalance:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub ${Environment}-web-scalegroup-lowcpucredits
+      Namespace: AWS/EC2
+      MetricName: CPUCreditBalance
+      Period: 300
+      EvaluationPeriods: 1
+      Statistic: Average
+      ComparisonOperator: LessThanThreshold
+      Threshold: 10
+      Dimensions:
+        - Name: AutoScalingGroupName
+          Value: !Ref WebServerScalingGroup
+      AlarmActions:
+        - Fn::ImportValue: !Sub "${BaseStack}-WebHealthAlertsSnsTopic"
+
+  WebInstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties: 
+      Path: /
+      Roles:
+        - !Ref IamRole
+
+  WebServerLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      InstanceType: t2.nano
+      KeyName: !Sub ${KeyName}
+      ImageId: !FindInMap [ WebServerAmi, !Ref "AWS::Region", ami ]
+      IamInstanceProfile: !Ref WebInstanceProfile
+      SecurityGroups:
+        - !Ref WebServerSecurityGroup
+      UserData:
+        # Change timestamp to trigger rolling update of group instances
+        Fn::Base64: !Sub |
+          #!/bin/bash -xe
+          # 2018-02-15 10:30
+          apt-get update
+          apt-get install -y python-pip
+          pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+          /usr/local/bin/cfn-init -v -s ${AWS::StackId} -r WebServerLaunchConfig --region ${AWS::Region}
+    Metadata:
+      AWS::CloudFormation::Init:
+        configSets:
+            default:
+              - config
+              - setupNginx
+        config:
+          files:
+            /etc/cfn/cfn-hup.conf:
+              content: !Sub |
+                [main]
+                stack=${AWS::StackId}
+                region=${AWS::Region}
+            /etc/cfn/hooks.d/cfn-auto-reloader.conf:
+              content: !Sub |
+                [cfn-auto-reloader-hook]
+                triggers=post.update
+                path=Resouces.WebServerLaunchConfig.MetaData.AWS::CloudFormation::Init
+                action=/usr/local/bin/cfn-init -v -s ${AWS::StackId} -r WebServerLaunchConfig --region ${AWS::Region}
+            /var/www/html/index.html:
+              content: !Sub |
+                Welcome to the Cloudformation Example - Say Cheese
+        setupNginx:
+          commands:
+            setup:
+              command: !Sub |
+                sudo apt-get -y install nginx

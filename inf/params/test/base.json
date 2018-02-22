@@ -1,0 +1,22 @@
+[
+    {
+        "ParameterKey": "Environment",
+        "ParameterValue": "test"
+    },
+    {
+        "ParameterKey": "CreateNotificationSubscriptions",
+        "ParameterValue": "true"
+    },
+    {
+        "ParameterKey": "SNSEmailAddress",
+        "ParameterValue": "Steven.Harper@infintiyworks.com"
+    },
+    {
+        "ParameterKey": "HostedZoneName",
+        "ParameterValue": "test.cloudformationexample.co.uk."
+    },
+    {
+        "ParameterKey": "RootHostedZoneID",
+        "ParameterValue": "Z192XA08G9DZLE"
+    }
+]
